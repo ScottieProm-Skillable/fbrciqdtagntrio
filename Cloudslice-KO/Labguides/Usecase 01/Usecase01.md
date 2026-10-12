@@ -1,875 +1,978 @@
-사용 사례 1- 의미론에서 인사이트로: Fabric Data Agents와 함께 Fabric IQ Ontology 활용하기
+# 사용 사례 01: 의미 체계에서 인사이트까지: Fabric 데이터 에이전트를 사용하여 Fabric IQ 온톨로지 활용하기
 
-### 소개
+**시나리오**
 
-현대 데이터 플랫폼에서는 기업들이 다양한 데이터 소스와 분석 모델 전반에 걸쳐 의미를 통합하는 **비즈니스 중심의 시맨틱 계층**이 필요한 경우가 많습니다. Microsoft Fabric IQ의 Ontology (Preview) 기능을 사용하면 **기업 개념**(예: 제품, 매장, 이벤트 등)과 **그 관계를** 정의하고, 이러한 정의를 Lakehouse, Semantic Model 및 Event Stream 전반의 실제 데이터에 바인딩함으로써 이 계층을 구축할 수 있습니다.
+**Lakeshore Retail**은 지역 물류 센터에서 공급받는 매장을 통해 일반 상품, 신선 식품, 냉동 제품(아이스크림 등)을 판매하는 가상의 다지역 소매업체입니다.
 
-이 시나리오에서는 여러 매장에서 아이스크림을 판매하는 가상의 회사인 ‘**Lakeshore Retail’**을 다룹니다. 이 튜토리얼은 샘플 데이터를 활용하여 환경을 설정하고, ‘매장(Store)’, ‘제품(Products)’, ‘판매 이벤트(SaleEvent)’와 같은 비즈니스 개념을 반영하는 Ontology를 구축하는 방법을 보여줍니다. 또한 Eventhouse에서 제공하는 냉동고 온도와 같은 스트리밍 데이터를 이러한 개념에 연결하여, Ontology가 **도메인 간 추론 및 쿼리를** 지원할 수 있도록 합니다. 예를 들어, “냉동고 온도가 –18 °C 이상으로 상승할 때 아이스크림 판매량이 감소하는 매장은 어디인가?”와 같은 쿼리를 처리할 수 있습니다.
+Lakeshore Retail의 데이터는 여러 시스템에 분산되어 있습니다:
 
-### 목표
+- 위치(매장 및 물류 센터), 제품, 공급업체, 재고 현황, 배송, 냉장 장치에 대한 **레이크하우스 테이블**
 
-- Lakehouse, Eventhouse, Ontology(Preview)를 포함한 필수 서비스를 갖춘
-  Microsoft Fabric workspace를 준비합니다.
+- Eventhouse에 저장되는 각 매장 냉장 장치의 **스트리밍 텔레메트리**(온도, 습도, 문 열림 상태)
 
-- 매장, 제품, 판매 이벤트, 냉동고와 같은 핵심 엔터티 유형을 정의하여
-  비즈니스 중심의 Ontology를 구축합니다.
+- 판매 거래 및 판매 측정값이 포함된 **Power BI 의미 체계 모델**
 
-- OneLake 테이블의 ind 정적 데이터와 Eventhouse의 시계열 데이터를
-  Ontology 엔터티에 연결합니다.
+운영 팀은 다음과 같은 도메인 간 질문에 빠르게 답할 수 있어야 합니다:
 
-- 실제 비즈니스 프로세스를 나타내기 위해 엔터티 간의 의미 있는 관계를
-  생성합니다(예: 매장은 판매 행사를 가지며, 매장은 냉동고를 운영함).
+*Which high-priority stores in the West have frozen products below safety stock, a recent refrigeration-temperature exception, and on-shelf availability below target? For each store, show the next inbound shipment and its expected arrival.*
 
-- 엔티티 인스턴스, 관계 그래프, 쿼리 빌더 필터를 사용하여 Ontology를
-  탐색하고 검증하십시오.
+(서부 지역의 우선순위가 높은 매장 중 냉동 제품이 안전 재고 미만이고, 최근 냉장 온도 예외가 발생했으며, 진열 가용률이 목표 미만인 매장은 어디입니까? 각 매장의 다음 입고 배송과 예상 도착 시간을 보여 주세요.)
 
-- Ontology를 Fabric Data Agent(Preview)와 통합하여 자연어 쿼리 기능을
-  활성화합니다.
+현재 이 질문에 답하려면 재고, 텔레메트리, 위치, 배송 데이터를 수동으로 조인해야 합니다. 이 실습에서 여러분은 Lakeshore Retail의 데이터 엔지니어입니다. 이러한 모든 소스를 비즈니스 용어로 연결하는 **RetailSalesOntology** 온톨로지를 구축하고, 설명과 비즈니스 규칙으로 보강하고, 그래프로 탐색한 다음, **Ontology agent**를 사용하여 시나리오 질문에 자연어로 답합니다.
 
+**소개**
 
-# 연습 1: 환경 설정
+현대적인 데이터 플랫폼에는 **비즈니스 중심 의미 체계 계층**, 즉 비즈니스를 고유한 용어로 설명하고 여러 데이터 소스에서 동일하게 작동하는 공유 모델이 필요합니다. **Microsoft Fabric IQ**의 **Ontology (preview)** 항목이 이 계층을 제공합니다. 온톨로지에서는 **엔터티 타입**(매장, 제품, 배송과 같은 비즈니스 개념), 해당 **속성**, 엔터티 간의 **관계**, 비즈니스 **규칙**을 정의한 다음, 이러한 정의를 OneLake의 실제 데이터(레이크하우스 테이블, Eventhouse(스트리밍) 테이블, Power BI 의미 체계 모델)에 바인딩합니다.
 
-## 과제 1: Fabric workspace만들기
+온톨로지가 준비되면 사용자와 AI 에이전트는 기본 테이블이나 조인을 알지 못해도 온톨로지를 **그래프**로 탐색하고 **자연어**로 질문할 수 있습니다.
 
-이 작업에서는 Fabric workspace를 생성합니다. 이 워크스페이스에는 lakehouse, dataflows, Data Factory pipelines, notebooks, Power BI 데이터셋, 보고서 등 이 lakehouse 튜토리얼에 필요한 모든 항목이 포함되어 있습니다.
+이 실습은 Microsoft Learn 자습서 시리즈 [Ontology (preview) tutorial](https://learn.microsoft.com/fabric/iq/ontology/tutorial-0-introduction)을 기반으로 합니다.
 
-1. 브라우저를 열고 주소창에 다음 URL을 입력하거나 붙여넣으세요: +++https://app.fabric.microsoft.com/+++ 그리고 **엔터 키를** 누른 뒤 로그인 정보를 입력해 로그인하세요
+**목표**
 
-1. 워크스페이스 창에서 **+New workspace** 타일을 클릭합니다.
+이 실습을 완료하면 다음을 수행할 수 있습니다:
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image1.png)
+- 레이크하우스, Eventhouse, 의미 체계 모델을 데이터 소스로 사용하는 Microsoft Fabric 작업 공간 준비하기
 
-1. 오른쪽에 나타나는 **워크스페이스 만들기** 창에서 다음 내용을 입력한 후 **적용** 버튼을 클릭합니다.
+- **Ontology (preview)** 항목을 생성하고 상속된 엔터티 타입을 포함한 엔터티 타입 정의하기
 
+- 엔터티 타입을 OneLake 테이블의 정적 데이터, Eventhouse의 시계열 데이터, Power BI 의미 체계 모델에 바인딩하기
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image2.png)
+- 실제 비즈니스 프로세스를 나타내는 관계 타입 생성하기 (예: Store *operates* Refrigeration Unit)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image3.png)
+- 엔터티, 속성, 관계 메타데이터와 비즈니스 규칙으로 온톨로지 보강하기
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image4.png)
+- 캔버스 뷰, 엔터티 인스턴스, 구체화된 그래프, 경로 쿼리로 온톨로지를 탐색하고 검증하기
 
+- **Ontology agent**를 사용하여 자연어로 질문하기
 
-## 과제 2: lakehouse을 만들기
+**아키텍처**
 
-1. 네비게이션 바에서 **+New item** 버튼을 클릭하여 새 레이크하우스를 만드세요.
+| **구성 요소** | **실습에서의 역할** |
+|----|----|
+| Fabric 작업 공간 Fabric IQ Ontology\<number\> | 실습의 모든 항목 포함 |
+| 레이크하우스 IQ_Lakehouse | 정적 데이터: 위치, 제품, 공급업체, 재고 현황, 배송, 냉장 장치 |
+| Eventhouse TelemetryDataEH (KQL 데이터베이스) | 스트리밍 데이터: RefrigerationTelemetry 테이블 |
+| 의미 체계 모델 SalesReport | 판매 거래 및 측정값 (Gross Margin %, Net Sales) |
+| 온톨로지 RetailSalesOntology | 데이터에 바인딩된 비즈니스 엔터티 타입, 관계, 메타데이터, 규칙 |
+| 그래프 모델 | 탐색 및 경로 쿼리를 위한 온톨로지의 구체화된 그래프 |
+| Ontology agent (preview) | 온톨로지에 대한 자연어 질문에 답하는 Copilot |
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image5.png)
+**대상 온톨로지**
 
-1. 필터에서 +++Lakehouse+++ 타일을 선택하세요.
+| **엔터티 타입** | **상속 대상** | **데이터 소스** |
+|----|----|----|
+| Location | | IQ_Lakehouse \> dimlocations |
+| Store | Location | IQ_Lakehouse \> dimlocations |
+| Distribution Center | Location | IQ_Lakehouse \> dimlocations |
+| Product | | IQ_Lakehouse \> dimproducts |
+| Frozen Product | Product | IQ_Lakehouse \> dimproducts |
+| Perishable Product | Product | IQ_Lakehouse \> dimproducts |
+| Inventory | | IQ_Lakehouse \> fact_inventory_positions |
+| Supplier | | IQ_Lakehouse \> dimsuppliers |
+| Shipment | | IQ_Lakehouse \> factshipments |
+| Refrigeration Unit | | IQ_Lakehouse \> dim_refrigeration_units |
+| Refrigeration Telemetry | | TelemetryDataEH \> RefrigerationTelemetry |
+| Sale | | SalesReport 의미 체계 모델 \> Sales (Ontology agent로 생성) |
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image6.png)
+**사전 요구 사항**
 
-1. **New lakehouse** 대화 상자에서 **Name** 필드에 +++IQ_Lakehouse +++를 입력하고 lakehouse schemas의 **unselect**을 합니다. **Create** 버튼을 클릭한 다음 new lakehousse를 엽니다.
+- **Microsoft Fabric 지원 용량**의 작업 공간
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image7.png)
+- Fabric 관리자가 **Ontology (preview)** 항목, Fabric 항목, Copilot / Azure OpenAI 기능(Ontology agent에 필요)에 대한 테넌트 설정을 활성화했어야 합니다.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image8.png)
+- 실습 VM의 **C:\LabFiles\Lab1**에 있는 실습 파일: 정적 데이터가 포함된 CSV 파일 6개, **refrigeration_telemetry.csv**, **SalesReport.pbix**
 
-1. **Successfully created SQL endpoint**라는 알림이 표시됩니다.
+**참고:** Microsoft Fabric의 온톨로지, Ontology agent, 그래프는 **미리 보기** 상태입니다. 화면과 레이블이 약간 다를 수 있습니다. AI가 생성한 답변은 부정확할 수 있으므로 중요한 답변은 항상 원본 데이터와 대조하여 확인하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image9.png)
+## 연습 1: 환경 설정하기
 
+이 연습에서는 온톨로지에 사용할 세 가지 데이터 소스, 즉 정적 데이터가 포함된 레이크하우스, 스트리밍 데이터가 포함된 Eventhouse, 판매 데이터가 포함된 Power BI 의미 체계 모델을 준비합니다.
 
-## 과제 3: 샘플 데이터를 가져오기
+### 작업 1: Fabric 작업 공간 생성하기
 
-1. **IQ_Lakehouse** 페이지에서 **Get data in your lakehouse** 섹션으로 이동한 후, **Upload files as shown in the below image** 를 클릭하세요.
+1.  브라우저를 열고 +++https://app.fabric.microsoft.com/+++로 이동한 다음 자격 증명으로 로그인하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image10.png)
+| **사용자 이름** | **+++@lab.CloudPortalCredential(User1).Username+++** |
+|----|----|
+| **비밀번호** | **+++@lab.CloudPortalCredential(User1).Password+++** |
 
-1. 파일 업로드 탭에서 파일 아래에 있는 폴더를 클릭합니다
+2.  Fabric 홈 페이지에서 **+ New workspace**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image11.png)
+![](./media/image1.png)
 
-1. 가상 머신(VM)에서 **C:\LabFiles\LabFiles** 폴더로 이동한 다음, **DimProducts.csv, DimStore.csv, FactSale.csv**및 **Freezer.csv** 파일을 선택하고 **Open** 버튼을 클릭하십시오.
+3.  **Create a workspace** 창에서 다음 세부 정보를 입력하세요:
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image12.png)
+    - **Name**: +++Fabric IQ Ontology@lab.LabInstance.Id+++ (고유한 이름이어야 함)
 
-1. 그런 다음 **Upload** 버튼을 클릭하고, 대화상자에서 **X** 아이콘을 선택해 **Upload files** 대화상자를 닫으세요.
+    - **Advanced**를 확장하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image13.png)
+![](./media/image2.png)
 
-    ![A screenshot of a upload box AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image14.png)
+4.  **License mode**에서 **Fabric**을 선택한 다음 **Apply**를 선택하세요.
 
-1. **Files**에서 새로 고침을 클릭하고 선택하세요. 파일이 나타납니다.
+![](./media/image3.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image15.png)
+5.  새 작업 공간이 열립니다.
 
-1. **Lakehouse** 페이지에서 탐색기 창 아래에 있는 **Files**을 선택합니다. 이제 **DimProducts.csv** 파일 위에 마우스를 올려보세요. **DimProducts.csv** 옆에 있는 가로 타원 아이콘**(…)**을 클릭하세요. 탐색하여 **Load Table**을 클릭한 다음, **New table**을 선택하세요.
+![](./media/image4.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image16.png)
+### 작업 2: 레이크하우스 생성하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image17.png)
+1.  작업 공간에서 **+ New item**을 선택하세요.
 
-1. **Load file to new table** 대화 상자에서 **Load** 버튼을 클릭합니다.
+![](./media/image5.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image18.png)
+2.  필터에서 **Lakehouse**를 찾아 선택하세요.
 
-1. 이제 **DimProducts** 테이블이 성공적으로 생성되었습니다.
+![](./media/image6.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image19.png)
+3.  **New Lakehouse** 대화 상자의 **Name** 상자에 +++IQ_Lakehouse+++를 입력하고, **Lakehouse schemas** 확인란을 선택 해제한 다음 **Create**를 선택하세요.
 
-1. **DimProducts** 테이블을 선택하여 데이터를 미리 봅니다.
+![](./media/image7.png)
 
-    \[!주석\]**주석**: 데이터를 미리 보려면 **Refresh** 버튼을 한 번 이상 클릭해야 할 수도 있습니다.
+**참고:** Microsoft Learn 자습서에서는 **Lakehouse schemas**를 선택한 상태로 두며, 이 경우 테이블은 **dbo** 스키마에 생성됩니다. 이 실습의 나머지 부분은 어느 쪽이든 동일하게 진행됩니다.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image20.png)
+4.  레이크하우스가 열립니다. **Successfully created SQL analytics endpoint** 알림이 표시될 때까지 기다리세요.
 
-1. 7~9단계를 반복하여 나머지 파일을 테이블에 입력합니다.
+![](./media/image8.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image21.png)
+![](./media/image9.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image22.png)
+### 작업 3: 정적 데이터를 레이크하우스 테이블로 로드하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image23.png)
+1.  **IQ_Lakehouse** 페이지의 **Get data in your lakehouse**에서 **Upload files**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image24.png)
+![](./media/image10.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image25.png)
+2.  **Upload files** 창에서 폴더 아이콘을 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image26.png)
+![](./media/image11.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image27.png)
+3.  **C:\LabFiles\Lab1**로 이동하여 CSV 파일 6개 **dim_refrigeration_units**, **dimlocations**, **dimproducts**, **dimsuppliers**, **fact_inventory_positions**, **factshipments**를 선택한 다음 **Open**을 선택하세요.
 
-1. 왼쪽 탐색 모음에서 **Fabric IQ Ontology**를 선택합니다.
+![](./media/image12.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image28.png)
+**중요:** **refrigeration_telemetry.csv** 또는 **SalesReport.pbix**는 업로드하지 마세요. 이 두 파일은 이 연습의 뒷부분에서 Eventhouse와 작업 공간에 로드합니다.
 
+4.  **Upload**를 선택하세요.
 
-## 과제 4: eventhouse준비하기
+![](./media/image13.png)
 
-Eventhouse에서 KQL 데이터베이스에 디바이스 스트리밍 데이터 파일을 업로드하려면 다음 단계를 따르세요.
+5.  6개 파일이 모두 업로드되었는지 확인한 다음 **X**를 선택하여 **Upload files** 창을 닫으세요.
 
-1. **Fabric IQ Ontology** 홈 페이지에서 **+New item**을 선택한 다음 **Eventhouse**를 선택하세요.
+![](./media/image14.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image29.png)
+6.  **Explorer**에서 **Files**를 선택하고 6개 파일이 표시되는지 확인하세요. 필요하면 **Refresh**를 선택하세요.
 
-1. Eventhouse 이름을 +++ **TelemetryDataEH** +++로 지정하고 **Create** 버튼을 클릭합니다.
+![](./media/image15.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image30.png)
+7.  **dim_refrigeration_units.csv** 위에 마우스를 올리고 **...**를 선택한 다음 **Load to Tables \> New table**을 선택하세요.
 
-1. eventhouse 는 준비되면 열립니다![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image31.png)
+![](./media/image16.png)
 
-1. KQL 데이터베이스의 이름을 선택하여 열어 주세요.
+![](./media/image17.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image32.png)
+8.  **Load file to new table** 대화 상자에서 기본 테이블 이름과 설정을 유지하고 **Load**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image33.png)
+![](./media/image18.png)
 
-1. **KQL database**의 하단 리본에서 **Get data**를 클릭한 다음, **Local file**을 선택하여 로컬 시스템의 파일을 데이터베이스로 업로드합니다.
+9.  **Tables** 아래에 **dim_refrigeration_units** 테이블이 표시되는지 확인하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image34.png)
+![](./media/image19.png)
 
-1. 데이터를 새 테이블로 수집하기 위한 대상 옵션을 선택하고, + New table을 클릭한 다음, 테이블 이름을 +++ **FreezerTelemetry** +++로 입력합니다.
+**참고:** 테이블을 확인하고 데이터를 미리 보려면 **Refresh**를 여러 번 선택해야 할 수도 있습니다.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image35.png)
+10. 나머지 5개 파일 각각에 대해 7~9단계를 반복하세요. 예를 들어 **dimlocations.csv**의 경우 **... \> Load to Tables \> New table**을 선택한 다음 **Load**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image36.png)
+![](./media/image20.png)
 
-1. 대상 테이블을 선택한 다음, 파일을 드래그 앤 드롭하거나 *Browse for files*를 클릭하여 데이터를 업로드합니다.
+![](./media/image21.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image37.png)
+11. 완료되면 레이크하우스에 **dim_refrigeration_units**, **dimlocations**, **dimproducts**, **dimsuppliers**, **fact_inventory_positions**, **factshipments** 테이블 6개가 생성됩니다. 기본 테이블 이름은 파일 이름을 소문자로 바꾼 것입니다.
 
-1. VM에서 **C:\LabFiles\Lab1** 로 이동한 다음, ***FreezerTelemetry*.csv**파일을 선택하고 **Open** 버튼을 클릭합니다.
+![](./media/image22.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image38.png)
+12. 왼쪽 탐색 모음에서 작업 공간 **Fabric IQ Ontology\<number\>**를 선택하세요.
 
-1. **Next** 버튼을 클릭합니다.
+![](./media/image23.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image39.png)
+### 작업 4: 스트리밍 데이터를 Eventhouse로 로드하기
 
-1. 그런 다음 **Finish** 버튼을 클릭합니다.
+1.  작업 공간에서 **+ New item**을 선택한 다음 **Eventhouse**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image40.png)
+![](./media/image24.png)
 
-1. 데이터 수집이 완료될 때까지 기다린 후 **Close**를 클릭합니다.
+2.  **Eventhouse name**에 +++TelemetryDataEH+++를 입력한 다음 **Create**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image41.png)
+![](./media/image25.png)
 
-1. 완료되면 KQL 데이터베이스에 **FreezerTelemetry** 테이블이 표시됩니다:
+3.  준비가 완료되면 Eventhouse가 열립니다. 같은 이름의 KQL 데이터베이스가 자동으로 생성됩니다.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image42.png)
+![](./media/image26.png)
 
-1. 왼쪽 탐색 창에서 **Fabric IQ Ontology**를 선택합니다.
+4.  **KQL databases** 아래에서 **TelemetryDataEH**를 선택하여 데이터베이스를 여세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image43.png)
+![](./media/image27.png)
 
+![](./media/image28.png)
 
-# 연습 2: OneLake에서 ontology 구축하기
+5.  리본에서 **Get data \> Local file**을 선택하세요.
 
-## 과제 1: ontology (preview) 항목 만들기
+![](./media/image29.png)
 
-1. Fabric workspace에서 **+ New item**을 선택합니다. **Ontology(preview)** 항목을 검색하여 선택합니다.
+6.  **Select or create a destination table**에서 **+ New table**을 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image44.png)
+![](./media/image30.png)
 
-1. Ontology **Name**에 +++ **RetailSalesOntology** **+++**를 입력하고 **Create** 선택하세요.
+7.  테이블 이름으로 +++RefrigerationTelemetry+++를 입력하고 확인 표시를 선택한 다음 **Browse for files**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image45.png)
+![](./media/image31.png)
 
-    > ** 팁:** Ontology 이름에는 숫자, 문자, 그리고 밑줄(\_)이 포함될 수
-    > 있습니다. 공백이나 대시는 사용하지 마세요.
+![](./media/image32.png)
 
-1. Ontology는 준비가 되면 열립니다.
+8.  **C:\LabFiles\Lab1**로 이동하여 **refrigeration_telemetry.csv**를 선택한 다음 **Open**을 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image46.png)
+![](./media/image33.png)
 
-    > 다음으로, lakehouse 테이블의 데이터를 기반으로 엔터티 타입, 데이터
-    > 바인딩, 관계를 만드세요.
+9.  **Next**를 선택하세요.
 
+![](./media/image34.png)
 
-## 과제 2: 엔터티 타입과 데이터 바인딩 만들기
+10. **Inspect the data** 페이지에서 열(**TelemetryId**, **UnitId**, **Timestamp**, **TemperatureC** 등)을 검토한 다음 **Finish**를 선택하세요.
 
-> 먼저, 엔터티 유형을 생성합니다. 엔터티 유형은 비즈니스 내 객체의
-> 유형을 나타냅니다. 이 단계에는 세 가지 엔터티 유형이 있습니다:
-> *Store*, *Products* 및 *SaleEvent*. 엔터티 유형을 만든 후에는
-> IQ_Lakehouse lakehouse 테이블에 원본 데이터 컬럼을 바인딩하여 속성을
-> 생성하세요.
+![](./media/image35.png)
 
-### 첫 번째 엔터티 유형(상점) 추가
+11. 수집 결과에 **1 blobs: 1 succeeded, 0 failed**가 표시될 때까지 기다린 다음 **Close**를 선택하세요.
 
-1. 상단 리본 메뉴나 구성 캔버스 중앙에서 **Add entity type** 를 선택하세요.
+![](./media/image36.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image47.png)
+12. KQL 데이터베이스에 **RefrigerationTelemetry** 테이블이 표시되는지 확인하세요.
 
-1. 엔터티 유형 이름에 +++ **Store** +++를 입력하고 **Add Entity Type**을 선택하세요.
+![](./media/image37.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image48.png)
+13. 왼쪽 탐색 모음에서 작업 공간을 선택하세요.
 
-1. *Store* 엔터티 유형이 구성 캔버스에 추가되고, **Entity type configuration** 창이 표시됩니다.
+![](./media/image38.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image49.png)
+### 작업 5: 의미 체계 모델 업로드하기
 
-1. 구성 캔버스에서 엔터티 이름 옆의 ...을 선택하고 **Bind data**를 선택합니다.
+1.  작업 공간에서 **Import \> Report, Paginated Report or Workbook \> From this computer**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image50.png)
+![](./media/image39.png)
 
-1. **Add data binding \> Lakehouse table**을 선택합니다.
+2.  **C:\LabFiles\Lab1**로 이동하여 **SalesReport.pbix**를 선택한 다음 **Open**을 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image51.png)
+![](./media/image40.png)
 
-1. 다음으로 데이터 소스를 선택합니다. **IQ_Lakehouse** lakehouse를 선택하고 **Next**을 선택합니다.
+3.  작업 공간에 **SalesReport** 보고서와 같은 이름의 **SalesReport** 의미 체계 모델이 표시되는지 확인하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image52.png)
+![](./media/image41.png)
 
-1. **dimstore** 테이블을 선택하고 **Select**를 선택합니다.
+## 연습 2: 온톨로지 구축하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image53.png)
+이 연습에서는 온톨로지 항목과 **엔터티 타입**을 생성합니다. 엔터티 타입은 비즈니스 객체의 유형을 나타냅니다. 데이터 소스의 열에 바인딩하여 엔터티 타입의 **속성**을 생성합니다. 또한 **상속**을 사용합니다. 자식 엔터티 타입(예: *Store*)은 부모(*Location*)의 모든 속성을 상속합니다.
 
-1. 소스 테이블의 필드가 데이터 바인딩 구성을 채웁니다. 설정 페이지의 각 섹션을 살펴보세요:
+### 작업 1: 온톨로지 항목 생성하기
 
-    - **엔터티 유형 키**: 수집된 데이터의 각 레코드를 고유하게 식별하는 데
-    사용할 수 있는 필드(들)를 식별합니다.
+1.  작업 공간에서 **+ New item**을 선택하세요. **Ontology (preview)**를 검색하여 선택하세요.
 
-    - **구속 선택**: 바인딩에 필요한 데이터를 보유한 원본 테이블을
-    식별합니다.
+![](./media/image42.png)
 
-    - **엔터티 유형 키 매핑**: 원본 데이터 테이블에서 엔터티 타입 키 속성에
-    매핑되는 열(들)을 식별합니다. 엔터티 타입 키로 사용할 소스 데이터의 문자열 및 정수형 컬럼을 선택할 수 있습니다. 선택한 컬럼들이 함께 레코드를 고유하게 식별합니다.
+2.  **New Ontology** 대화 상자에서 **Name**에 +++RetailSalesOntology+++를 입력하고, **Location**은 작업 공간으로 유지한 다음 **Create**를 선택하세요.
 
-    - **특성**: *Store* 엔터티 유형의 속성으로 표현될 원본 데이터의 열을
-    나열합니다. **Source column** 항목은 *dimstore*  테이블의 열로 자동 채워지며, **Property name** 항목에는 온톨로지 내 *Store* 엔터티 유형의 해당 속성 이름이 표시됩니다. 이 튜토리얼에서는 기본 속성 이름을 그대로 사용하십시오.
+![](./media/image43.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image54.png)
+**팁:** 온톨로지 이름은 문자로 시작해야 하며 문자, 숫자, 밑줄만 포함할 수 있습니다. 공백이나 대시는 사용하지 마세요.
 
+**중요:** Fabric에서 온톨로지 항목을 생성할 수 없으면 관리자에게 필요한 테넌트 설정이 활성화되어 있는지 확인을 요청하세요.
 
-1. 구성 상단에서 **Define entity type key**를 선택합니다.
+3.  온톨로지가 구성 캔버스에 열립니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image55.png)
+![](./media/image44.png)
 
-1. 속성 목록에서 **StoreId**를 선택하고 **Save**을 선택합니다.
+### 작업 2: Location 엔터티 타입 생성하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image56.png)
+1.  리본에서 **+ Add entity type**을 선택하세요.
 
-1. 데이터 바인딩을 **Save**합니다
+![](./media/image45.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image57.png)
+2.  **Entity type name**에 +++Location+++을 입력한 다음 **Add Entity Type**을 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image58.png)
+![](./media/image46.png)
 
-1. 엔터티 유형이 성공적으로 업데이트되었는지 확인한 다음, **Cancel** 를 선택하여 구성 옵션을 닫습니다.
+3.  **Location** 엔터티 타입이 캔버스와 **Explorer**에 추가됩니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image59.png)
+![](./media/image47.png)
 
-1. 엔티티 유형 세부 정보의 **Configure**페이지가 표시됩니다. 이 페이지에는 속성 및 데이터 바인딩을 포함하여 해당 엔티티 유형에 대한 중요한 정보가 나타납니다. 구성된 데이터 바인딩을 확인하십시오.
+4.  캔버스에서 **Location** 옆의 **...**를 선택한 다음 **Bind data**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image60.png)
+![](./media/image48.png)
 
-1. **Home**을 선택하여 구성 캔버스로 돌아가 새 엔터티 유형을 추가합니다.
+5.  **Add a data source**에서 **Add**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image61.png)
+![](./media/image49.png)
 
+6.  **OneLake catalog**에서 **IQ_Lakehouse**를 확장하고 **dimlocations** 테이블을 선택한 다음 **Select table**을 선택하세요.
 
-### 다른 엔티티 유형(Products, SaleEvent) 추가
+![](./media/image50.png)
 
-1. **Store** 엔터티 유형에 대해 수행했던 것과 동일한 단계를 따라 다음 표에 설명된 엔터티 유형을 생성하십시오. 각 엔터티는 원본 테이블의 기본 열을 사용하는 정적 데이터 바인딩을 갖습니다.
+7.  소스를 검토하세요. **dimlocations**가 **Primary source**로 설정되어 있습니다.
 
-    
+![](./media/image51.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image62.png)
+8.  **Entity type properties**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image63.png)
+![](./media/image52.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image64.png)
+9.  **dimlocations** 테이블의 열이 제안된 속성(**LocationId**, **LocationType**, **Name**, **Region**, **City** 등)으로 채워집니다. 변경하지 말고 **Create**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image65.png)
+![](./media/image53.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image66.png)
+10. **Entity type updated successfully**가 표시되면 **Cancel**을 선택하여 바인딩 페이지를 닫으세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image67.png)
+![](./media/image54.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image68.png)
+11. 엔터티 타입의 **Configure** 페이지가 열리고 속성과 데이터 소스가 표시됩니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image69.png)
+![](./media/image55.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image70.png)
+### 작업 3: Store 엔터티 타입 생성하기 (Location에서 상속)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image71.png)
+1.  **Home**을 선택하여 구성 캔버스로 돌아가세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image72.png)
+![](./media/image56.png)
 
-1. **Home**을 선택하여 구성 캔버스로 돌아간 다음, **SaleEvent** 엔터티 유형을 추가합니다.
+2.  리본에서 **+ Add entity type**을 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image73.png)
+![](./media/image57.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image74.png)
+3.  **Entity type name**에 +++Store+++를 입력하세요. **Additional configuration**을 확장하고 **Choose entity to inherit from (optional)**을 **Location**으로 설정한 다음 **Add Entity Type**을 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image75.png)
+![](./media/image58.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image76.png)
+4.  **Store** 엔터티 타입이 캔버스에 표시됩니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image77.png)
+![](./media/image59.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image78.png)
+5.  **Explorer**에서 **Store**를 선택한 상태로 **View Entity Type details**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image79.png)
+![](./media/image60.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image80.png)
+6.  **Configure** 탭에서 **Store**에 이미 속성이 있는 것을 확인하세요. 이 속성은 **Location**에서 상속되었지만 **Data source**는 **Unbound** 상태입니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image81.png)
+![](./media/image61.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image82.png)
+7.  **Manage property bindings \> Add binding and properties**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image83.png)
+![](./media/image62.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image84.png)
+8.  **Add**를 선택하세요.
 
-1. 작업을 완료하면 **Entity Types** 창에 해당 엔터티 유형들이 나열된 것을 볼 수 있습니다.
+![](./media/image63.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image85.png)
+9.  **IQ_Lakehouse**를 확장하고 **dimlocations**를 선택한 다음 **Select table**을 선택하세요.
 
+![](./media/image64.png)
 
-## 과제 3: 관계 유형 생성
+10. **Entity type properties**를 선택하고 각 속성에 소스 열이 있는지 확인한 다음 **Create**를 선택하세요.
 
-다음으로, 데이터 내의 맥락적 연결을 나타내기 위해 엔티티 유형 간의 관계 유형을 생성하십시오.
+![](./media/image65.png)
 
-### 스토어에서 SaleEvent
+11. **Entity type updated successfully**가 표시되면 **Cancel**을 선택하세요.
 
-1. 탐색기에서 **SaleEvent** 엔터티 유형을 선택합니다.
+![](./media/image66.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image86.png)
+**참고:** **Store**와 **Distribution Center**는 모두 **dimlocations** 테이블을 사용합니다. **LocationType** 열(STORE 또는 DC)로 둘을 구분합니다. 이 내용은 연습 4에서 엔터티 설명으로 문서화합니다.
 
-1. 메뉴 리본에서 **Add relationship**를 선택합니다.
+### 작업 4: 나머지 엔터티 타입 생성하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image87.png)
+같은 단계로 다음 엔터티 타입을 생성하세요. 각 엔터티 타입에 대해 표에 나열된 테이블을 바인딩하고 모든 소스 열을 속성으로 유지하세요.
 
-1. 다음 관계 유형 세부 정보를 입력하고 **Add relationship type**를 선택합니다.
+| **엔터티 타입 이름** | **상속 대상** | **데이터 소스 테이블** |
+|----|----|----|
+| Distribution Center | Location | IQ_Lakehouse \> dimlocations |
+| Product | | IQ_Lakehouse \> dimproducts |
+| Frozen Product | Product | IQ_Lakehouse \> dimproducts |
+| Perishable Product | Product | IQ_Lakehouse \> dimproducts |
+| Inventory | | IQ_Lakehouse \> fact_inventory_positions |
+| Supplier | | IQ_Lakehouse \> dimsuppliers |
+| Shipment | | IQ_Lakehouse \> factshipments |
+| Refrigeration Unit | | IQ_Lakehouse \> dim_refrigeration_units |
+| Refrigeration Telemetry | | TelemetryDataEH \> RefrigerationTelemetry |
 
-    - **관계 유형 이름**: +++from+++
-    - **소스 엔터티 유형**: *SaleEvent*
-    - **대상 엔티티 유형**: *Store*
+다음 단계에서는 처음 몇 개를 예로 보여 줍니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image88.png)
+1.  **Distribution Center:** **Home \> + Add entity type**을 선택하세요. +++Distribution Center+++를 입력하고 **Additional configuration**을 확장한 다음 부모로 **Location**을 선택하고 **Add Entity Type**을 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image89.png)
+![](./media/image67.png)
 
+![](./media/image68.png)
 
-1. 관계가 시맨틱 캔버스에 추가됩니다. 해당 관계를 선택하여 관계 세부 정보 설정 화면을 엽니다. 설정 페이지의 각 섹션을 확인해 보십시오:
+2.  **Distribution Center** 옆의 **... \> Bind data**를 선택하고 **Add**를 선택한 다음 **IQ_Lakehouse \> dimlocations**를 선택하고 **Select table**을 선택하세요.
 
-    - **Origin 엔터티 유형**: 원본 엔티티(이 경우 **SaleEvent**)의 세부
-    정보를 나열합니다.
+![](./media/image69.png)
 
-    - **관계 유형**: 관계 유형의 세부 사항을 설정합니다.
-    - **대상 기업 유형**: 대상 엔티티(이 경우 **Store**)의 세부 정보를
-    나열합니다.
+![](./media/image70.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image90.png)
+![](./media/image71.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image91.png)
+3.  **Entity type properties \> Create**를 선택하고 **Entity type updated successfully**가 표시되면 **Cancel**을 선택하세요. **Configure** 페이지에 바인딩된 속성이 표시됩니다.
 
+![](./media/image72.png)
 
-1. 중간 섹션에 다음 세부 정보를 입력하십시오.
+![](./media/image73.png)
 
-1. **Mapping Table**: **Browse available sources**  \` **factsales**\` 테이블을 선택하십시오. 소스 데이터에 포함된 이 테이블은 *Store*과 *SaleEvent*엔터티를 서로 연결할 수 있는데, 이는 두 엔터티 유형을 식별하는 정보를 모두 담고 있기 때문입니다. 이 테이블의 각 행은 ID를 통해 특정 store 및 sale event를 참조합니다.
+![](./media/image74.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image92.png)
+4.  **Product:** **Home \> + Add entity type**을 선택하고 +++Product+++를 입력한 다음 **Add Entity Type**을 선택하세요.
 
-1. **Matched SaleEvent: SaleId**: **SaleId**선택. 이 설정은 *SaleEvent* 엔터티에 정의된 키 속성과 값이 일치하는 관계 원본 데이터 테이블의 열을 지정합니다. 이 경우 관계 데이터 원본과 엔터티 데이터 원본이 모두 *factsales* 테이블을 사용하므로, 동일한 열(SaleId)을 선택하게 됩니다.
+![](./media/image75.png)
 
-1. **Matched Store: StoreId**: **StoreId**선택.이 설정은 관계의 원본 데이터 테이블(factsales \> StoreId)에서 *Store* 엔터티(dimstore \> StoreId)에 정의된 키 속성과 값이 일치하는 열을 지정합니다. 튜토리얼 데이터의 경우, 두 테이블 모두에서 해당 열의 이름이 StoreId로 동일합니다.
+**참고:** 여기에 표시된 대로 **Product**(또는 복수형 *Products*)를 사용하세요. 그래프 쿼리 언어인 GQL의 예약어(예: **ORDER**)와 같은 엔터티 타입 이름은 피하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image93.png)
+5.  **... \> Bind data \> Add**를 선택하고 **IQ_Lakehouse \> dimproducts**를 선택한 다음 **Select table**, **Entity type properties \> Create**, **Cancel**을 차례로 선택하세요.
 
-    ** 중요:** 엔티티 유형의 키 속성과 일치하는 올바른 **Matched** 열을 선택해야 합니다.
+![](./media/image76.png)
 
-1. 관계 유형을 **Save**합니다. 관계 유형이 성공적으로 업데이트되었는지 확인한 다음, **Cancel**를 선택하여 구성 옵션을 닫습니다.
+![](./media/image77.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image94.png)
+![](./media/image78.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image95.png)
+6.  **Frozen Product:** **Home \> + Add entity type**을 선택하고 +++Frozen Product+++를 입력한 다음 부모로 **Product**를 설정하고 **Add Entity Type**을 선택하세요. 같은 방법으로 **IQ_Lakehouse \> dimproducts**에 바인딩하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image96.png)
+![](./media/image79.png)
 
-    > 이제 첫 번째 관계가 생성되어 소스 테이블의 데이터에 연결되었습니다.
-    > 다음 섹션으로 넘어가 또 다른 유형의 관계를 생성해 보세요.
+![](./media/image80.png)
 
+7.  같은 방법으로 위 표의 테이블을 사용하여 **Perishable Product**(부모: **Product**), **Inventory**, **Supplier**, **Shipment**, **Refrigeration Unit**을 생성하세요.
 
-### **SaleEvent 판매된 Products**
+8.  **Refrigeration Telemetry:** **Home \> + Add entity type**을 선택하고 +++Refrigeration Telemetry+++를 입력한 다음 **Add Entity Type**을 선택하세요.
 
-1. **Home**을 선택하여 새 엔터티 유형을 추가할 수 있는 구성 캔버스로 돌아갑니다.
+![](./media/image81.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image97.png)
+9.  **... \> Bind data \> Add**를 선택하세요. **OneLake catalog**에서 **TelemetryDataEH \> TelemetryDataEH**(KQL 데이터베이스)를 확장하고 **RefrigerationTelemetry** 테이블을 선택한 다음 **Select table**을 선택하세요.
 
-1. 첫 번째 관계 유형을 생성할 때와 동일한 단계를 따라, 다음 표에 설명된 세부 정보를 포함하는 **SaleEvent** 엔터티 유형 기반의 두 번째 관계를 생성하십시오.
+![](./media/image82.png)
 
-    
+**참고:** 이 엔터티 타입은 레이크하우스 테이블이 아니라 **Eventhouse** 테이블을 데이터 소스로 사용합니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image98.png)
+10. **Entity type properties**를 선택하고 속성(**TelemetryId**, **UnitId**, **Timestamp**, **TemperatureC**, **HumidityPct**, **DoorOpen** 등)을 검토한 다음 **Create**와 **Cancel**을 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image99.png)
+![](./media/image83.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image100.png)
+11. **확인:** **Home**을 선택하세요. **Explorer**에 엔터티 타입 11개(**Location**, **Store**, **Distribution Center**, **Product**, **Frozen Product**, **Perishable Product**, **Inventory**, **Supplier**, **Shipment**, **Refrigeration Unit**, **Refrigeration Telemetry**)가 표시됩니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image101.png)
+![](./media/image84.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image102.png)
+### 작업 5: Ontology agent로 Sale 엔터티 타입 추가하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image103.png)
+**Ontology agent**로 온톨로지를 *구축*할 수도 있습니다. 이 작업에서는 에이전트를 사용하여 **SalesReport** 의미 체계 모델에 바인딩된 **Sale** 엔터티 타입을 생성합니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image104.png)
+1.  리본에서 **Ontology agent**를 선택하세요. 에이전트가 오른쪽 창에서 **Plan** 모드로 열립니다.
 
+![](./media/image85.png)
 
-# 연습 3:추가 데이터로 ontology를 풍부하게 하세요
+**참고:** **Plan** 모드에서 에이전트는 온톨로지를 쿼리 및 탐색하고 변경 사항을 제안할 수 있지만 실제로 변경하지는 않습니다. **Act** 모드에서는 변경 사항을 적용합니다.
 
-이 실습에서는 새로운 ***Freezer*** 엔티티 유형을 추가하여 ontology를 확장합니다. 이 엔티티 유형은 도메인 맥락을 보강하고, 실시간 운영 정보를 반영하는 시계열 데이터용 속성을 도입합니다.
+2.  **Say something** 상자에 다음 프롬프트를 입력하고 **Send**를 선택하세요:
 
-### 주석
+    +++Create a new entity type called Sale, bound to data in the Sales table from the SalesReport semantic model inside this workspace.+++
 
-정적 데이터와 시계열 데이터 모두에 대해 데이터를 바인딩하지 않고 속성을 생성한 다음 나중에 데이터를 바인딩하거나, 속성을 생성하고 데이터를 한 번에 바인딩할 수 있습니다. 이 문서에서는 두 가지 접근 방식을 모두 설명합니다.
+![](./media/image86.png)
 
-마지막으로, 매장과 freezers 간의 연결을 나타내는 새로운 관계 유형을 생성합니다.
+3.  에이전트가 새 엔터티 타입에 대한 계획을 생성합니다. **Enrichment added** 요약을 검토하세요.
 
-## 과제 1: Freezer 엔티티 유형을 생성하고 속성을 추가하세요.
+![](./media/image87.png)
 
-다음 단계에 따라 *Freezer* 엔터티 유형을 만들고 여기에 속성을 추가하세요. 속성은 아직 데이터에 바인딩되지 않은 상태입니다.
+4.  토글을 **Act**로 전환하고 +++Apply the entity type plan+++을 입력한 다음 **Send**를 선택하세요.
 
-1. 상단 리본에서 **Add entity type**를 선택합니다. 엔티티 유형 이름으로 +++Freezer+++를 입력하고 **Add entity type**를 선택합니다.
+![](./media/image88.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image105.png)
+5.  에이전트가 온톨로지 변경 사항을 생성하는 동안 기다리세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image106.png)
+![](./media/image89.png)
 
-1. **Explorer**에서 Freezer 엔터티 유형을 선택한 다음, 상단 리본에서 **View entity type details** 를 선택합니다.
+6.  에이전트가 캔버스에 **Sale** 엔터티 타입을 추가하고 결과를 보고합니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image107.png)
+![](./media/image90.png)
 
-1. 엔터티 유형 세부 정보의 **Configure**페이지가 열립니다. 이 페이지에는 속성 및 데이터 바인딩을 포함하여 해당 엔터티 유형에 대한 중요한 정보가 표시됩니다.
+**참고:** 다른 초안 정의와의 충돌로 인해 에이전트가 적용이 *부분적*이라고 보고할 수 있습니다. **Sale exists now**가 표시되면 계속 진행할 수 있습니다.
 
-    **Manage property bindings** 를 확장하고 **Add properties**를 선택합니다.
+7.  **Explorer**에서 **Sale**을 선택한 다음 **View Entity Type details**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image108.png)
+![](./media/image91.png)
 
-1. 다음 속성을 추가하고 **Save**을 선택합니다.
+8.  속성(**Channel**, **CostAmount**, **NetSalesAmount**, **ProductId**, **SaleId** 등)이 의미 체계 모델의 **Sales** 테이블에 바인딩되어 있는지 확인하세요.
 
-    
+![](./media/image92.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image109.png)
+9.  **Metrics**까지 아래로 스크롤하여 의미 체계 모델의 DAX 측정값에서 **Gross Margin %**와 **Net Sales** 두 메트릭이 추가되었는지 확인하세요.
 
-    **주석:** 속성 이름은 모든 엔터티 유형에 걸쳐 고유해야 합니다.
+![](./media/image93.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image110.png)
+## 연습 3: 관계 타입 생성하기
 
-1. 속성들이 데이터 소스에 바인딩되지 않은 **Configure** 페이지에 추가됩니다.
+**관계 타입**은 원본 엔터티 타입을 대상 엔터티 타입에 연결합니다. 이 실습에서는 속성으로 연결합니다. **원본 속성**과 **대상 속성**은 같은 값을 가져야 합니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image111.png)
+### 작업 1: Store operates Refrigeration Unit 관계 생성하기
 
+1.  캔버스에서 엔터티 타입 옆의 **...**를 선택하고 **Add relationship type**을 선택하세요(또는 리본에서 **Add relationship**을 선택).
 
-## 과제 2: 정적 데이터를 프로퍼티에 바인딩하기
+![](./media/image94.png)
 
-다음으로, *Freezer* 엔터티 유형에서 생성한 속성에 정적 데이터를 바인딩합니다.
+2.  다음 세부 정보를 입력한 다음 **Create**를 선택하세요:
 
-1. **Manage property bindings** 를 확장하고 **Add binding and properties**를 선택합니다.
+    - **Relationship type name**: +++operates+++
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image112.png)
+    - **Origin entity type**: **Store**
 
-1. **Add data binding \> Lakehouse table**선택
+    - **Target entity type**: **Refrigeration Unit**
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image113.png)
+![](./media/image95.png)
 
-1. 데이터 소스를 선택하세요.
+3.  캔버스의 **Store**와 **Refrigeration Unit** 사이에 관계가 표시됩니다.
 
-    - **IQ_Lakehouse** lakehouse를 선택하고 **Next**을 선택합니다.
-    - **freezer** 테이블을 선택하고 **Select**을 누르세요.
+![](./media/image96.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image114.png)
+4.  **operates** 관계를 선택하여 구성을 여세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image115.png)
+![](./media/image97.png)
 
+5.  페이지에는 **Origin entity type**(Store), **Relationship**(operates), **Target entity type**(Refrigeration Unit)의 세 섹션이 있습니다. **Use mapping table?**은 **Off**로 두세요.
 
-1. 원본 테이블의 필드가 데이터 바인딩 구성에 채워집니다. 구성 페이지의 각 섹션을 살펴보십시오:
+![](./media/image98.png)
 
-    - **Entity type key**: 수집된 데이터의 각 레코드를 고유하게 식별하는 데
-    사용할 수 있는 필드(또는 필드들)를 식별합니다.
+6.  원본 엔터티 타입의 **Property**에서 **LocationId**를 선택하세요. 대상 엔터티 타입의 **Property**에서 **StoreId**를 선택하세요. **Save**를 선택하세요.
 
-    - **Binding selection**: 바인딩에 사용할 데이터를 포함하는 원본 테이블을
-    식별합니다.
+![](./media/image99.png)
 
-    - **Entity type key mapping**: 엔터티 유형의 키 속성에 매핑되는 원본
-    데이터 테이블의 열을 지정합니다. 원본 데이터에서 문자열(string) 또는 정수(integer) 형식의 열을 엔터티 유형 키로 선택할 수 있습니다. 선택한 열들을 조합하여 레코드를 고유하게 식별하게 됩니다.
+**참고:** 이 설정은 Store의 **LocationId**가 Refrigeration Unit의 **StoreId**와 일치한다는 의미입니다.
 
-    - **Properties**: 소스 데이터의 열과 **Freezer** 엔터티 유형의 해당
-    속성을 나열합니다. **Source column** 쪽은 **freezer** 테이블의 열로 자동 채워지며, **Property name** 쪽에는 온톨로지 내 **Freezer** 엔터티 유형의 해당 속성 이름이 표시됩니다. 이 튜토리얼에서는 기본 속성 이름을 그대로 사용하십시오.
+7.  **Successfully updated the relationship type**이 표시되면 **Cancel**을 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image116.png)
+![](./media/image100.png)
 
+8.  **Store**의 **Configure** 페이지에서 **Relationships** 섹션에 새 관계가 표시됩니다.
 
-1. 구성 상단에서 **Define entity type key**를 선택합니다. 속성 목록에서 FreezerId를 선택한 다음 **Save**을 선택합니다.
+![](./media/image101.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image117.png)
+### 작업 2: 나머지 관계 타입 생성하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image118.png)
+1.  **Home**을 선택한 다음 **Add relationship**을 선택하세요.
 
-1. 데이터 바인딩을 **Save**합니다. 엔터티 유형이 성공적으로 업데이트되었는지 확인한 다음, **Cancel**를 선택하여 구성 옵션 창을 닫습니다.
+![](./media/image102.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image119.png)
+2.  원본 **Shipment**, 대상 **Store**로 **deliversTo**를 생성하고 **Create**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image120.png)
+![](./media/image103.png)
 
+![](./media/image104.png)
 
-## 과제 3: 시계열 데이터를 추가 속성에 바인딩
+3.  **deliversTo** 관계를 선택하고 원본 **Property**를 **ToStoreId**로, 대상 **Property**를 **LocationId**로 설정한 다음 **Save**와 **Cancel**을 선택하세요.
 
-다음으로, 새로운 속성을 생성하고 단일 데이터 바인딩 작업을 통해 해당 속성에 시계열 데이터를 바인딩함으로써 **Freezer** 엔티티에 시계열 데이터를 추가합니다.
+![](./media/image105.png)
 
-1. **Configure** 페이지에서 **Manage property bindings**를 확장하고 **Add binding and properties**를 다시 선택하여 바인딩 구성 화면을 다시 엽니다.
+4.  같은 방법으로 나머지 관계 타입을 생성하세요. 표에는 이미 생성한 **operates**와 **deliversTo**를 포함한 모든 관계 타입이 나와 있습니다:
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image121.png)
+| **관계 타입 이름** | **원본 엔터티 타입 (속성)** | **대상 엔터티 타입 (속성)** |
+|----|----|----|
+| operates | Store (LocationId) | Refrigeration Unit (StoreId) |
+| deliversTo | Shipment (ToStoreId) | Store (LocationId) |
+| occursAt | Sale (StoreId) | Store (LocationId) |
+| stockedAt | Inventory (StoreId) | Store (LocationId) |
+| originatesAt | Shipment (FromLocationId) | Distribution Center (LocationId) |
+| forProduct | Sale (ProductId) | Product (ProductId) |
+| stockedAt | Product (ProductId) | Inventory (ProductId) |
+| suppliedBy | Product (SupplierId) | Supplier (SupplierId) |
+| contains | Shipment (ProductId) | Product (ProductId) |
+| hasTelemetryReading | Refrigeration Unit (UnitId) | Refrigeration Telemetry (UnitId) |
 
-1. **Binding selection**에서 **Add data binding** 를 확장하고 **Eventhouse table or materialized view**를 선택합니다.
+5.  **확인:** **Home**을 선택하세요. 캔버스에 엔터티 타입을 연결하는 관계가 표시됩니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image122.png)
+![](./media/image106.png)
 
-1. 데이터 소스를 선택하세요.
+**중요:** 올바른 속성을 선택하세요. 원본 속성과 대상 속성의 값이 다르면 관계는 생성되지만 일치하는 항목을 찾지 못합니다.
 
-    1. **TelemetryDataEH** eventhouse를 선택하고 **Add**를 선택합니다.
+## 연습 4: 온톨로지 보강하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image123.png)
+메타데이터와 규칙은 AI 에이전트가 데이터를 올바르게 해석하는 데 필요한 비즈니스 맥락을 제공합니다. 이 연습에서는 엔터티 타입, 속성, 관계 타입에 설명을 추가하고 비즈니스 규칙을 정의합니다.
 
-1. **FreezerTelemetry** 테이블을 선택하고 **Add**.
+### 작업 1: 엔터티 타입 메타데이터 추가하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image124.png)
+1.  **Explorer**에서 **Store**를 선택한 다음 **View Entity Type details**를 선택하세요.
 
-1. 구성에 **Timeseries data** 섹션이 나타납니다. **Timestamp column**로 timestamp를 선택하십시오.
+![](./media/image107.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image125.png)
+2.  **Entity metadata**까지 스크롤하세요. **Description**에 다음 텍스트를 입력한 다음 **Update**를 선택하세요:
 
-1. **Properties**섹션으로 스크롤을 내리면 **StoreId** 항목에 오류가 표시되는데, 이는 정적 데이터 바인딩에 이미 바인딩되어 있기 때문입니다. 휴지통 아이콘을 사용하여 중복된 속성을 삭제하세요.
+    +++Filtered locations binding where LocationType = STORE; priorityDefinition=Tier 1 stores require same-day response.+++
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image126.png)
+![](./media/image108.png)
 
-1. 데이터 바인딩을 **Save**합니다. 엔터티 유형이 성공적으로 업데이트되었는지 확인한 다음, **Cancel**를 선택하여 구성 옵션 창을 닫습니다.
+3.  설명을 확인한 다음 **Home**을 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image127.png)
+![](./media/image109.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image128.png)
+4.  같은 방법으로 다음 엔터티 타입에 설명을 추가하세요(엔터티 타입 선택, **View Entity Type details** 선택, **Description** 입력, **Update** 선택):
 
-1. 다시 *Freezer*의 **Configure** 페이지로 돌아가 보면, 엔티티 유형 속성이 늘어났으며 새로 추가된 속성들이 *FreezerTelemetry* 데이터 소스에 바인딩되어 있음을 확인할 수 있습니다.
+| **엔터티 타입** | **설명** |
+|----|----|
+| Distribution Center | +++Filtered locations binding where LocationType = DC.+++ |
+| Frozen Product | +++Filtered items binding where StorageClass = FROZEN.+++ |
+| Perishable Product | +++Filtered items binding where StorageClass = PERISHABLE.+++ |
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image129.png)
+![](./media/image110.png)
 
-    이제 *Freezer* 엔티티는 두 가지 데이터 바인딩을 갖습니다. 하나는 *freezer* lakehouse 테이블의 정적 데이터와 연결되고, 다른 하나는 *FreezerTelemetry* eventhouse 테이블의 스트리밍 데이터와 연결됩니다.
+![](./media/image111.png)
 
+![](./media/image112.png)
 
-## 과제 4: 관계 유형 추가
+![](./media/image113.png)
 
-마지막으로, store과 freezers 간의 연결을 나타내는 새로운 관계 유형을 생성하십시오.
+![](./media/image114.png)
 
-### Create Store는 Freezer를 운영
+5.  **Inventory**를 여세요. **Additional metadata**에서 **+**를 선택하여 다음 키-값 쌍을 추가한 다음 **Update**를 선택하세요:
 
-1. **Configure** 페이지에서 Manage relationships를 확장하고 **Add new relationship**를 선택합니다.
+    - **On-Shelf Availability %**: +++On-shelf availability percentage is calculated by dividing the total ShelfAvailableUnits by the total ShelfCapacityUnits. If total ShelfCapacityUnits is zero, the result is blank to avoid division by zero.+++
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image130.png)
+    - **Low On-Shelf Availability**: +++On-Shelf Availability % less than 95+++
 
-1. 다음 관계 유형 세부 정보를 입력하고 **Add relationship type**를 선택합니다.
+![](./media/image115.png)
 
-    1. **Relationship type name**: *operates*
+6.  **Sale**을 여세요. 의미 체계 모델에서 추가된 **Description**과 **Synonyms**를 검토하세요. 변경할 필요는 없습니다.
 
-    1. **Source entity type**: *Store*
+![](./media/image116.png)
 
-    1. **Target entity type**: *Freezer*
+### 작업 2: 속성 메타데이터 추가하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image131.png)
+1.  **Explorer**에서 **Product** 옆의 **...**를 선택한 다음 **Bind data**를 선택하세요.
 
-1. 관계가 **Relationships** 섹션에 추가됩니다. 캔버스에서 **operates** 관계를 선택하여 관계 세부 정보 구성 화면을 엽니다. 구성 페이지의 각 섹션을 확인해 보십시오:
+![](./media/image117.png)
 
-    - **Origin entity type**: 원본 엔티티(이 경우 Store)의 세부 정보를
-    나열합니다.
+2.  **Entity type properties**를 선택하세요.
 
-    - **Relationship type**: 관계 유형의 세부 사항을 설정합니다.
-    - **Target entity type**: 대상 엔티티(이 경우 *Freezer*)의 세부 정보를
-    나열합니다.
+![](./media/image118.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image132.png)
+3.  **ProductId** 행에서 **Metadata**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image133.png)
+![](./media/image119.png)
 
+4.  **Description**에 +++Enterprise product identifier; not a supplier SKU or UPC.+++를 입력하고 **Update**를 선택하세요.
 
-1. 중간 섹션에 다음 세부 정보를 입력하십시오.
+![](./media/image120.png)
 
-    - **Mapping table**: **freezer** 테이블을 선택하십시오. 이 테이블은
-    *Store*과 *Freezer* 엔터티를 식별하는 정보를 모두 포함하고 있어, 원본 데이터 내에서 두 엔터티를 서로 연결할 수 있습니다. 이 테이블의 각 행은 ID를 통해 특정 store과 freezer를 참조합니다.
+5.  **Save**를 선택하고 **Entity type updated successfully**가 표시되면 **Cancel**을 선택하세요.
 
-    - **Matched Store: StoreId**: **StoreId**선택. 이 설정은 Store
-    엔터티(dimstore \> StoreId)에 정의된 키 속성과 값이 일치하는 관계 원본 데이터 테이블(freezer \> StoreId)의 열을 지정합니다. 튜토리얼 데이터의 경우, 두 테이블 모두에서 열 이름이 StoreId로 동일합니다.
+![](./media/image121.png)
 
-    - **Matched Freezer: FreezerId**: **FreezerId**선택. 이 설정은 *Freezer*
-    엔터티에 정의된 키 속성과 값이 일치하는, 관계 소스 데이터 테이블의 열을 지정합니다. 이 경우 관계 데이터 소스와 엔터티 데이터 소스 모두 *freezer* 테이블을 사용하므로, 동일한 열(FreezerId)을 선택하게 됩니다.
+![](./media/image122.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image134.png)
+6.  **Refrigeration Telemetry**에 대해 반복하세요: **TemperatureC** 행에서 **Metadata**를 선택하고 +++Temperature in Celsius+++를 입력한 다음 **Update**와 **Save**를 선택하세요.
 
-    ** 중요:** 엔터티 유형 키 속성과 일치하는 올바른 소스 열을 선택해야 합니다.
+![](./media/image123.png)
 
+![](./media/image124.png)
 
-1. 관계 유형을 **Save**합니다. 관계 유형이 성공적으로 업데이트되었는지 확인한 다음, **Cancel**를 선택하여 구성 옵션을 닫습니다.
+![](./media/image125.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image135.png)
+7.  **Inventory**에 대해 반복하세요: **InventoryStatus** 행에서 **Metadata**를 선택하고 +++0 is AT_RISK and 1 is HEALTHY.+++를 입력한 다음 **Update**와 **Save**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image136.png)
+![](./media/image126.png)
 
-1. 엔티티의 **Configure** 페이지가 표시되며, 여기서 업데이트된 관계가 **Relationships** 섹션에 계속 표시됩니다.
+![](./media/image127.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image137.png)
+### 작업 3: 관계 메타데이터 추가하기
 
+1.  **Home**을 선택하고 **Store**를 선택한 다음 캔버스에서 **operates** 관계를 선택하세요.
 
-# 연습 4: **Ontology 보기**
+![](./media/image128.png)
 
-이 연습에서는 미리 보기 환경을 사용하여 온톨로지를 탐색해 보세요. 데이터를 사용하여 엔티티 유형을 인스턴스화하는 엔티티 인스턴스를 검사하고, 판매 및 장치 스트리밍 데이터 전반에 걸쳐 그래프 형태의 컨텍스트를 살펴보세요.
+![](./media/image129.png)
 
-## 과제 1: **인스턴스 목록 및 정적 데이터 보기**
+2.  **Metadata** 섹션에서 **Edit**를 선택하세요.
 
-이전 튜토리얼 단계에서 엔터티 유형에 데이터를 바인딩했을 때, ontology는 원본 데이터 행과 연결된 해당 엔터티의 인스턴스를 자동으로 생성했습니다. 이 섹션에서는 미리 보기 기능을 사용하여 해당 엔터티 인스턴스를 확인합니다.
+![](./media/image130.png)
 
-1. Ontology의 홈 구성 캔버스에서 시작합니다. **SaleEvent** 엔터티 유형을 선택하고 상단 리본에서 **View Entity Type details**를 선택합니다.
+3.  **Description**에 +++Identifies the refrigeration equipment operating in a store.+++를 입력하고 **Update**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image138.png)
+![](./media/image131.png)
 
-1. **Instances** 탭을 엽니다. **factsales** lakehouse 테이블에서 수익과 단위 수치 같은 데이터가 채워진 6개의 엔터티 인스턴스가 표시되는지 확인하세요.
+4.  **Save**를 선택하고 **Successfully updated the relationship type**이 표시되면 **Cancel**을 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image139.png)
+![](./media/image132.png)
 
+![](./media/image133.png)
 
-## 과제 2: 시계열 데이터 보기
+5.  같은 방법으로 다른 관계 타입에도 설명을 추가하세요:
 
-1. 페이지 왼쪽 상단에서 엔티티 유형 이름 옆의 선택 도구를 사용하여 **Freezer** 엔티티 유형으로 전환하십시오.
+| **관계** | **설명** |
+|----|----|
+| deliversTo (Shipment \> Store) | +++Identifies the store receiving the shipment.+++ |
+| occursAt (Sale \> Store) | +++Identifies where the sale occurred.+++ |
+| stockedAt (Inventory \> Store) | +++Represents an active store assortment and its current inventory position, not merely a historical sale.+++ |
+| originatesAt (Shipment \> Distribution Center) | +++Identifies the distribution center sending the shipment.+++ |
+| forProduct (Sale \> Product) | +++Identifies the item sold.+++ |
+| stockedAt (Product \> Inventory) | +++The item is part of the store's active assortment and has a current inventory position there.+++ |
+| suppliedBy (Product \> Supplier) | +++Identifies the supplier responsible for the items.+++ |
+| contains (Shipment \> Product) | +++Identifies the item being replenished.+++ |
+| hasTelemetryReading (Refrigeration Unit \> Refrigeration Telemetry) | +++Identifies the sensor telemetry readings for refrigeration units.+++ |
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image140.png)
+### 작업 4: 비즈니스 규칙 추가하기
 
-1. **Overview** 탭을 엽니다. 기본 기간 설정인 **Last 30 days** 에는 데이터가 포함되어 있지 않으므로, 탭이 열릴 때 차트는 비어 있는 상태로 표시됩니다.
+**규칙**은 비즈니스에서 반드시 참이어야 하거나, 참이면 안 되거나, 참이어야 하는 내용을 자연어로 설명합니다. 엔터티 타입과 일치하는 단어는 온톨로지에 연결됩니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image141.png)
+1.  **Home**을 선택하고 **Explorer**에서 **Rules**를 선택하세요.
 
-1. 시간 범위를 기본값인 **Last 30 days**에서, **2025년 8월 1일 금요일 오전 12:00**에 시작하여 **2025년 8월 4일 월요일 오전 12:00**에 종료되며, **시간 세분도**가 **5분인** 사용자 지정 날짜 범위로 업데이트하십시오.
+![](./media/image134.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image142.png)
+2.  **+ Create rule**을 선택하세요.
 
-1. 선택한 시간 창 내에서 여러 **Freezer** 엔티티 인스턴스에서 이제 표시되는 시계열 데이터를 확인하십시오.
+![](./media/image135.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image143.png)
+3.  **Rule name**에 +++Cold-chain exception+++을 입력하고 **Create**를 선택하세요.
 
+![](./media/image136.png)
 
-## 과제 3: **ontology graph보기**
+4.  **Rule definition**에 다음 텍스트를 입력하세요. **Linked ontology concepts**에서 **Add concept**를 선택하여 **Frozen Product**와 **Refrigeration Unit**을 추가하세요. **Save**를 선택하세요.
 
-**Overview** 탭에는 **Relationship graph**도 포함되어 있으며, 이를 통해 온톨로지를 노드와 에지로 구성된 그래프로 시각화할 수 있습니다.
+    +++A frozen product has a cold-chain exception when the temperature of the refrigeration unit storing it remains above the product's maximum storage temperature for more than 20 minutes.+++
 
-1. 엔터티 유형 선택기를 사용하여 **SaleEvent** 엔터티 유형으로 전환합니다. **Relationship graph** 타일에서 **Expand**을 선택하세요.
+![](./media/image137.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image144.png)
+5.  **Rule saved**가 표시되면 **Cancel**을 선택하세요.
 
-1. 그는 graph 뷰를 확장했다 열림**. SaleEvent** 엔터티 유형과 **Products** 및 **Store** 간의 관계 세부 사항을 확인하세요.
+![](./media/image138.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image145.png)
+6.  **New rule**을 선택하고 +++Inventory at risk+++를 입력한 다음 **Create**를 선택하세요.
 
-1. 엔터티 유형 선택기를 사용하여 **Store** 엔터티 유형으로 전환합니다. 그 **relationship graph**를 확장하십시오.
+![](./media/image139.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image146.png)
+![](./media/image140.png)
 
-1. Graph에서 **Store**가 **Freezer** 및 **SaleEvent**와 맺고 있는 관계를 관찰하세요. 그다음 쿼리 빌더 리본에서 **Run query**을 선택하세요. 이 작업은 기본 쿼리를 실행하고 엔터티 인스턴스와 그 연결을 그래프로 보여줍니다
+7.  정의에 +++A store inventory position is at risk when projected on-hand inventory falls below safety stock before the next scheduled delivery+++를 입력하고, **Store**와 **Inventory**를 연결한 다음 **Save**와 **Cancel**을 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image147.png)
+![](./media/image141.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image148.png)
+8.  **New rule**을 선택하고 +++Late replenishment+++를 입력한 다음 **Create**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image149.png)
+![](./media/image142.png)
 
+9.  정의에 +++A replenishment shipment is late when its estimated arrival is more than four hours after its scheduled arrival.+++를 입력하고, **Shipment**를 연결한 다음 **Save**와 **Cancel**을 선택하세요.
 
-## 과제 4: Query Graph 인스턴스
+![](./media/image143.png)
 
-Relationship graph뷰에서는 특정 조건을 만족하는 엔터티 인스턴스를 온톨로지에서 조회할 수 있습니다. 상단 리본의 **Query builder** 필터를 사용해 쿼리를 작성하세요.
+10. **Business rules** 목록에 규칙 3개가 표시되는지 확인하세요.
 
-![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image150.png)
+![](./media/image144.png)
 
-*먼저, 다음 쿼리를 작성하세요: Paris store에서 운영되는 모든 freezers를 보여 주세요.*
+## 연습 5: 온톨로지 탐색하기
 
-1. Store 엔터티의 관계 그래프에서 쿼리 빌더 리본에서 **Add filter \> Store \> StoreId**를 선택합니다. 필터를 **StoreId = S-PAR-01**로 설정하세요. 이 값은 *Paris* store의 Store ID입니다.
+### 작업 1: 캔버스 뷰와 엔터티 인스턴스 탐색하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image151.png)
+1.  **Home**을 선택하고 **Product**를 선택하세요. 캔버스 오른쪽 위에서 **Full ontology**를 선택하여 모든 엔터티 타입과 관계를 확인하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image152.png)
+![](./media/image145.png)
 
-1. **Components**섹션에서 SaleEvent의 체크를 해제하여 체크된 필드가 **Nodes \> Store, Nodes \> Freezer,** 그리고 **Edges \> operates**만 남도록 합니다.
+2.  **Lineage**를 선택하여 상속 구조를 확인하세요. **Product**에는 파생 타입 **Frozen Product**와 **Perishable Product**가 있습니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image153.png)
+![](./media/image146.png)
 
-1. **Run query**를 선택하고 인스턴스 그래프에 *Paris* store과 연결된 두 대의 freezers가 표시되는지 확인하세요.
+3.  **Relationship**을 선택하면 선택한 엔터티 타입의 관계만 표시됩니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image154.png)
+![](./media/image147.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image155.png)
+4.  **Product**를 선택한 상태로 **View Entity Type details**를 선택하세요.
 
-1. 쿼리 결과를 지우려면 **Clear query**를 선택합니다.
+![](./media/image148.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image156.png)
+5.  **Instances** 탭을 선택하세요. **dimproducts** 테이블에서 채워진 제품 레코드가 목록에 표시됩니다.
 
-    *다음으로, 이 쿼리를 작성하세요: 매출이 150을 초과하는 판매를 한 모든 매장을 표시하세요.*
+![](./media/image149.png)
 
-1. **Add a node를 선택한 다음 SaleEvent용 노드를 추가하세요.**
+### 작업 2: 엔터티 타입 키 정의하기
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image157.png)
+**엔터티 타입 키**는 엔터티 타입의 각 레코드를 고유하게 식별합니다. 그래프에 포함되는 모든 엔터티 타입에는 키가 필요합니다.
 
-1. **Components** 섹션에서 **Nodes \> Store** and **Edges \> from** 옆의 박스를 체크해 그래프에 추가하세요.
+1.  **Location**을 선택하고 **View Entity Type details**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image158.png)
+![](./media/image150.png)
 
-1. 쿼리 빌더 리본 메뉴에서 **Add filter \> SaleEvent \> RevenueUSD**를 선택합니다**.** 필터를 +++RevenueUSD \> 150+++로 설정합니다.
+2.  **Entity type key** 옆에서 **Define entity type key**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image159.png)
+![](./media/image151.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image160.png)
+3.  **LocationId**를 선택한 다음 **Save**를 선택하세요.
 
-1. **Run query**을 선택하고, 인스턴스 그래프에 연결된 판매 이벤트에 대한 필터 조건을 충족하는 두 개의 스토어가 표시되는지 확인합니다. 또한 그래프에서 노드를 선택하여 특정 판매 이벤트에 대한 세부 정보를 확인할 수도 있습니다.
+![](./media/image152.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image161.png)
+4.  **Entity type key**에 **LocationId**가 표시되는지 확인하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image162.png)
+![](./media/image153.png)
 
-    이 프로세스를 통해 운영상의 문제(예: 특정 매장의 냉동고 온도 상승)와 비즈니스 성과(매출)를 연결하는 경로를 파악할 수 있습니다.
+5.  다른 엔터티 타입에 대해서도 반복하세요. 예를 들어 **Store**의 경우 **LocationId**를 선택하세요.
 
+![](./media/image154.png)
 
-# 연습 5: **에이전트에서 ontology를 가져오기**
+| **엔터티 타입** | **키** |
+|----|----|
+| Location, Store, Distribution Center | LocationId |
+| Product, Frozen Product, Perishable Product | ProductId |
+| Inventory | **fact_inventory_positions**의 고유 ID 열 |
+| Supplier | SupplierId |
+| Shipment | **factshipments**의 고유 ID 열 |
+| Refrigeration Unit | UnitId |
 
-Ontology (preview) 는 [Fabric data agent (preview)](https://learn.microsoft.com/en-us/fabric/data-science/concept-data-agent) 와 연동되어, 사용자가 자연어로 질문을 하면 온톨로지의 정의와 바인딩을 기반으로 한 답변을 얻을 수 있게 해줍니다.
+**참고:** **Sale**과 **Refrigeration Telemetry**는 건너뛰세요. 이 실습에서는 그래프에 포함되지 않습니다.
 
-## 과제 1: Ontology (preview) 소스로 Data Agent 생성하기
+### 작업 3: 그래프 구체화하기
 
-Ontology (preview) 항목에 연결되는 새 데이터 에이전트를 만들려면 다음 단계를 따르세요.
+1.  **Home**을 선택한 다음 리본에서 **Manage graph**를 선택하세요.
 
-1. 이제 왼쪽 네비게이션 창에서**Fabric IQ Ontology XX** 를 클릭하세요.
+![](./media/image155.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image163.png)
+2.  **Configure Graph** 페이지가 열리고 **Use the entire Ontology**가 **Yes**로 설정되어 있습니다. **Sale**과 **Refrigeration_Telemetry**(미리 보기에서 회색으로 표시)를 제외한 모든 엔터티 타입이 선택되어 있습니다.
 
-1. **Fabric** 홈 페이지에서 **+New item**을 선택합니다. 항목 유형별 필터 검색창에 +++data agent+++를 입력한 후 데이터 에이전트를 선택하세요
+![](./media/image156.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image164.png)
+![](./media/image157.png)
 
-1. Data Agent 이름으로 +++RetailOntologyAgent+++ 를 입력하고 **Create**를 선택합니다.
+![](./media/image158.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image165.png)
+**중요:** **전체** 온톨로지를 구체화하는 데는 **1시간 이상** 걸릴 수 있습니다. 시간 내에 실습을 마치려면 다음 단계에 설명된 대로 일부 엔터티 타입만으로 그래프를 구축하세요. 작은 그래프는 몇 분 안에 생성되며 이 실습의 탐색에 충분합니다.
 
-1. In **RetailOntologyAgent** 페이지에서, **Add a data source**를 선택합니다
+3.  **Use the entire Ontology**를 **No**로 설정하세요. **Entities** 목록에서 **Store**, **Product**, **Shipment**, **Supplier**만 선택하고 나머지는 모두 선택 해제하세요. **Preview**에서 이 엔터티 타입만 파란색으로 강조 표시되는지 확인한 다음 **Continue**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image166.png)
+![](./media/image159.png)
 
-1. OneLake 카탈로그 탭에서 **RetailSalesOntology** Ontology를 선택한 다음 **Add**를 선택합니다.
+**참고:** 스크린샷은 선택하는 과정을 보여 줍니다. 다음 작업에서 **Shipment**, **Store**, **Product** 간의 관계를 사용하고 **Store**에서 **Supplier**로 경로 쿼리를 실행하므로 **Shipment**와 **Supplier**도 선택되어 있는지 확인하세요. 관계는 양쪽 엔터티 타입이 모두 선택된 경우에만 포함됩니다.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image167.png)
+**팁:** 시간이 더 있으면 **Use the entire Ontology**를 **Yes**로 유지하여 **Sale**과 **Refrigeration_Telemetry**를 제외한 모든 엔터티 타입을 구체화할 수 있습니다. 1시간 이상 걸립니다.
 
-    > 에이전트가 준비되면 열립니다.
+4.  **Projection summary** 페이지에서 선택한 엔터티를 검토한 다음 **Materialize**를 선택하세요.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image168.png)
+![](./media/image160.png)
 
+5.  **Creating graph model** 알림이 표시됩니다. 그래프 모델이 생성될 때까지 기다리세요.
 
-## 과제 2: 에이전트 지침 제공
+![](./media/image161.png)
 
-** 주석:** 이 단계는 쿼리 집계에 영향을 미치는 알려진 문제에 대응하여 추가되었습니다.
+![](./media/image162.png)
 
-> 다음으로, 에이전트에 사용자 지정 지시를 추가합니다.
+### 작업 4: 그래프 탐색하기
 
-1. 메뉴 리본에서 **Agent instructions** 을 선택합니다.
+1.  리본에서 **Explore graph**를 선택하세요. 이 버튼은 그래프가 구체화된 후에 사용할 수 있습니다.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image169.png)
+![](./media/image163.png)
 
-1. 입력 상자 하단에 +++Support group by in GQL+++를 추가하세요. 이 명령을 사용하면 온톨로지 데이터 전반에 걸쳐 더 효과적인 집계 처리가 가능합니다.
+2.  그래프 쿼리셋이 열립니다. 오른쪽에서 퍼즐 조각 아이콘을 선택하여 **Components** 창을 펼치세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image170.png)
+![](./media/image164.png)
 
-1. 지침이 자동으로 적용됩니다. 원한다면**Agent instructions** 탭을 닫으세요.
+![](./media/image165.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image171.png)
+![](./media/image166.png)
 
+3.  **Components** 창에 그래프에서 사용 가능한 **Nodes**와 **Edges**가 표시됩니다.
 
-## 과제 3: 자연어를 사용하는 쿼리 에이전트
+![](./media/image167.png)
 
-> 다음으로 자연어 질문을 통해 ontology를 탐색해 보세요.
+4.  **Nodes**에서 **Store**, **Product**, **Shipment**를 선택하세요. **Edges**에서 **Shipment_Store**와 **Shipment_Product**를 선택하세요. 노드와 간선이 캔버스에 추가됩니다.
 
-1. 아래 이미지에 표시된 것처럼 다음 텍스트를 입력하고 **Submit icon** 을 클릭하세요.
+![](./media/image168.png)
 
-    +++For each store, show any freezers operated by that store that ever had a humidity lower than 46 percent.+++
+5.  리본에서 **Path query**를 선택하고 메시지가 표시되면 **Switch**를 확인하세요. 시애틀 매장과 공급업체 Cascade Fresh Products 사이의 2홉 이내 경로를 찾도록 다음 세부 정보를 입력한 다음 **Run**을 선택하세요:
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image172.png)
+    - **Start node**: **Store**
 
-    ![A screenshot of a chat AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image173.png)
+    - **End node**: **Supplier**
 
-1. 아래 이미지에 표시된 것처럼 다음 텍스트를 입력하고 **Submit icon** 을 클릭하세요.
+    - **Filter start node**: **City** = +++Seattle+++
 
-    *+++What is the top product by revenue across all stores?+++*
+    - **Filter end node**: **SupplierName** = +++Cascade Fresh Products+++
 
-    ![A screenshot of a chat AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image174.png)
+    - **Max hops**: **2**
 
-    ![A screenshot of a chat AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image175.png)
+![](./media/image169.png)
 
-    > 응답이 단순한 테이블뿐 아니라 엔터티 타입
-    > (*Store*, *Products*, *Freezer*) 과 그 관계를 참조한다는 점에
-    > 주목하세요.
+6.  쿼리 캔버스와 **Results** 창에서 결과를 검토하세요.
 
-    ![Screenshot of the result of a query.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image176.png)
+![](./media/image170.png)
 
-    > ** 팁:** 예제 쿼리를 실행하는 도중 데이터가 없다는 오류가 뜨면,
-    > 에이전트가 초기화될 시간을 더 줄 수 있도록 몇 분 정도 기다리세요. 그런
-    > 다음, 쿼리를 다시 실행하세요.
-    >
-    > 직접 몇 가지 프롬프트를 시도해 보면서 데이터 에이전트를 계속 탐색해
-    > 보세요.
+## 연습 6: Ontology agent로 질문하기
 
+**Ontology agent (preview)**는 자연어로 온톨로지를 구축하고 사용할 수 있도록 지원하는 AI 기반 Copilot입니다. 메타데이터와 규칙을 포함한 온톨로지를 바탕으로 추론하고, 바인딩된 데이터 소스를 쿼리하여 질문에 답합니다.
 
-## 과제 4: 리소스 정리
+### 작업 1: 자연어로 질문하기
 
-1. 왼쪽 내비게이션 메뉴에서 작업 공간인 **Fabric IQ OntologyXX** 를 선택하세요. 작업 공간 항목 뷰를 엽니다.
+1.  **Home**을 선택하고 리본에서 **Ontology agent**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image177.png)
+![](./media/image171.png)
 
-1. 작업 공간 이름 아래에 있는 ... 옵션을 선택하고 **Workspace settings**을 선택합니다.
+2.  에이전트가 오른쪽 창에서 **Plan** 모드로 열립니다.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image178.png)
+![](./media/image172.png)
 
-1. General탭의 맨 아래로 이동하여 **Remove this workspace**를 선택합니다.
+3.  +++Which frozen products are stocked at Tier 1 stores in the West?+++를 입력하고 **Send**를 선택하세요.
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image179.png)
+![](./media/image173.png)
 
-    ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntrio/refs/heads/main/Cloudslice-KO/Labguides/Usecase%2001/media/image180.png)
+4.  에이전트가 잠시 추론한 후 온톨로지를 바탕으로 답변합니다. **Reasoning**을 확장하여 답에 도달한 과정을 확인하세요.
 
+![](./media/image174.png)
 
-### 요약
+![](./media/image175.png)
 
-이 사용 사례는 Microsoft Fabric IQ Ontology (preview) 를 활용하여 실제 비즈니스 개념과 그 관계를 나타내는 연결된 시맨틱 데이터 모델을 생성하는 방법을 보여줍니다. 이 ontology는 구조화된 lakehouse 데이터와 스트리밍 telemetry 데이터를 결합함으로써, 기업 데이터에 대한 통합적이고 비즈니스 친화적인 뷰를 제공합니다.
+5.  +++Which of those inventory positions are below safety stock?+++를 입력하고 **Send**를 선택하세요.
 
-엔터티 정의, 데이터 바인딩, 관계 모델링을 통해 사용자는 냉동고 온도나 습도 같은 운영 신호가 매출과 수익 같은 비즈니스 결과와 어떻게 연관되는지 분석할 수 있습니다. 또한 이 사례는 ontology가 Fri Aug 01 2025 Agent를 통해 Graph 탐색과 자연어 질의를 지원하며, 사용자가 기본 테이블이나 스키마를 이해하지 않아도 더 깊은 인사이트를 얻을 수 있음을 보여줍니다.
+![](./media/image176.png)
 
-전반적으로 이 사례는 Fabric IQ Ontology가 운영 데이터와 분석을 연결해 다양한 분야에서 더 현명한 의사결정을 지원하는 방식을 보여줍니다.
+6.  재고 현황별 보유 수량, 안전 재고, 부족 수량이 나열된 답변을 검토하세요.
+
+![](./media/image177.png)
+
+7.  (선택 사항) 다음 질문으로 온톨로지를 더 탐색하거나 직접 질문해 보세요:
+
+    - +++Which affected stores had a qualifying refrigeration-temperature exception?+++
+
+    - +++What inbound shipments are expected for the affected products and stores?+++
+
+    - +++What is the on-shelf availability of frozen products for each store?+++
+
+    - +++Which of these stores have low on-shelf availability?+++
+
+    - +++Which of these stores have declining gross margin?+++
+
+### 작업 2: 시나리오 질문에 답하기
+
+1.  Lakeshore Retail 시나리오의 주요 질문을 입력하고 **Send**를 선택하세요:
+
+    +++Which high-priority stores in the West have frozen products below safety stock, a recent refrigeration-temperature exception, and on-shelf availability below target? For each store, show the next inbound shipment and its expected arrival.+++
+
+![](./media/image178.png)
+
+2.  답변을 검토하세요. 에이전트는 온톨로지를 통해 재고, 냉장 텔레메트리, 매장, 배송 데이터를 결합하고 비즈니스 규칙과 메타데이터(예: 진열 가용률 목표)를 적용하여 조건에 맞는 매장과 다음 입고 배송을 나열합니다.
+
+![](./media/image179.png)
+
+![](./media/image180.png)
+
+**참고:** 에이전트가 *recent*(최근), *target*(목표)과 같은 용어를 해석하는 방식에 따라 실행할 때마다 답변이 다를 수 있습니다. 에이전트는 답변에 가정을 명시합니다. 중요한 답변은 원본 데이터와 대조하여 확인하세요.
+
+## 연습 7: 리소스 정리하기
+
+1.  왼쪽 탐색 모음에서 작업 공간 **Fabric IQ Ontology\<number\>**를 선택한 다음 **Workspace settings**를 선택하세요.
+
+![](./media/image181.png)
+
+2.  **General** 탭에서 **Delete workspace**까지 스크롤한 다음 **Remove this workspace**를 선택하세요. 삭제를 확인하세요.
+
+![](./media/image182.png)
+
+3.  **Workspace deleted** 알림을 확인하세요.
+
+![](./media/image183.png)
+
+**요약**
+
+이 실습에서는 **Microsoft Fabric IQ Ontology (preview)**를 사용하여 Lakeshore Retail 운영에 대한 연결된 비즈니스 친화적 모델을 구축했습니다. 정적 데이터가 포함된 레이크하우스, 냉장 텔레메트리가 포함된 Eventhouse, 판매 데이터가 포함된 Power BI 의미 체계 모델을 준비했습니다. 엔터티 타입과 상속(Location \> Store 및 Distribution Center, Product \> Frozen 및 Perishable Product)을 사용하여 **RetailSalesOntology**를 생성하고 세 가지 데이터 소스에 모두 바인딩했으며, Ontology agent를 사용하여 의미 체계 모델에서 **Sale** 엔터티 타입을 추가했습니다. 관계 타입으로 엔터티 타입을 연결하고, 엔터티, 속성, 관계 메타데이터와 비즈니스 규칙으로 모델을 보강했으며, 캔버스 뷰, 인스턴스, 구체화된 그래프, 경로 쿼리로 탐색했습니다. 마지막으로 **Ontology agent**를 사용하여 조인을 하나도 작성하지 않고 도메인 간 시나리오 질문에 자연어로 답했습니다. 이를 통해 온톨로지가 운영 데이터와 분석 데이터를 연결하고, 사용자와 AI 에이전트가 비즈니스를 공통적으로 이해할 수 있게 해 준다는 것을 알 수 있습니다.
