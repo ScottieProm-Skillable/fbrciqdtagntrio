@@ -193,6 +193,8 @@ Lakeshore Retail의 데이터는 여러 시스템에 분산되어 있습니다:
 
 ![](./media/image22.png)
 
+**참고**: 실습 중 Fabric 용량 관련 문제가 발생하면 Azure Portal에서 Fabric 용량으로 이동하여 용량을 약 5분간 일시 중지한 후 다시 시작하십시오. 용량이 정상적으로 실행되면 나머지 실습 단계를 계속 진행하십시오.
+
 12. 왼쪽 탐색 모음에서 작업 공간 **Fabric IQ Ontology\<number\>**를 선택하세요.
 
 ![](./media/image23.png)
