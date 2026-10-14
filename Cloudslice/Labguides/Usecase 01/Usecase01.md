@@ -812,15 +812,20 @@ An **entity type key** uniquely identifies each record of an entity type. All th
 
 ![](./media/image154.png)
 
-| **Entity type**                             | **Key**                          |
-|---------------------------------------------|----------------------------------|
-| Location, Store, Distribution Center        | LocationId                       |
-| Product                                     | ProductId                        |
-|Frozen Product, Perishable Product           |Productname
-| Inventory                                   | the unique ID column of **fact_inventory_positions** |
-| Supplier                                    | SupplierId                       |
-| Shipment                                    | the unique ID column of **factshipments** |
-| Refrigeration Unit                          | UnitId                           |
+| Entity type             | Entity type key                       |
+| ----------------------- | ------------------------------------- |
+| Location                | `LocationId`                          |
+| Store                   | `LocationId`                          |
+| Distribution Center     | `LocationId`                          |
+| Product                 | `ProductId`                           |
+| Frozen Product          | `ProductId`                           |
+| Perishable Product      | `ProductId`                           |
+| Sale                    | *skip*                                |
+| Inventory               | `StoreId`, `ProductId` (multi-select) |
+| Refrigeration Unit      | `UnitId`                              |
+| Shipment                | `ShipmentId`                          |
+| Supplier                | `SupplierId`                          |
+| Refrigeration Telemetry | *skip*                                |
 
 **Note:** Skip **Sale** and **Refrigeration Telemetry**; they aren't included in the graph in this lab.
 
