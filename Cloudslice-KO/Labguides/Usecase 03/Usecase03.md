@@ -72,10 +72,10 @@
 |----|----|
 | Subscription | 구독을 선택 |
 | Resource group | **ResourceGroup1** 선택 |
-| Database name | **+++sqldatabaseXXXX+++** (XXXX = 실습 Instance ID의 마지막 4자리) |
+| Database name | +++sqldatabase@lab.LabInstance.Id+++ (XXXX = 실습 Instance ID의 마지막 4자리) |
 | Server | **Create new**를 선택 |
-| Server name | **+++sqlserverXXXX+++** (XXXX = 실습 Instance ID의 마지막 4자리) |
-| Location | **(Asia Pacific) Southeast Asia** |
+| Server name | +++sqlserver@lab.LabInstance.Id+++ (XXXX = 실습 Instance ID의 마지막 4자리) |
+| Location | @lab.CloudResourceGroup(ResourceGroup1).Location |
 | Authentication method | **Use SQL authentication** |
 | Server admin login | **+++sqladmin+++** |
 | Password | **+++password321!+++** |
