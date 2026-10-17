@@ -180,17 +180,17 @@ In this task, you will create a Fabric Data Agent and connect it to the Lakehous
 
     ![A screenshot of a computer AI-generated content may be incorrect.](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image29.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image30.png)
+    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/lab2a2.png)
 
 1. In AI-agent page, select **Add a data source**.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image31.png)
+    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/lab2a1.png)
 
 1. In the **OneLake catalog** tab, select the **AI-Fabric_lakehouse lakehouse** and select **Add**.
 
     ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image32.png)
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image33.png)
+    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/lab2a4.png)
 
 1. You must then select the tables for which you want the AI skill to have available access.
 
@@ -217,7 +217,7 @@ In this task, you will create a Fabric Data Agent and connect it to the Lakehous
   
     - FactResellerSales
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image34.png)
+    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/lab2a5.png)
 
 
 ## Task 4: Provide instructions
@@ -228,7 +228,7 @@ Here, you will enrich the Data Agent by adding natural language questions and th
 
 1. For instance, for the question +++What is the most sold product?+++
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image35.png)
+    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/lab2a6.png)
 
     ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image36.png)
 
