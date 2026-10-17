@@ -818,8 +818,8 @@ An **entity type key** uniquely identifies each record of an entity type. All th
 | Store                   | `LocationId`                          |
 | Distribution Center     | `LocationId`                          |
 | Product                 | `ProductId`                           |
-| Frozen Product          | `ProductId`                           |
-| Perishable Product      | `ProductId`                           |
+| Frozen Product          | `ProductName`                           |
+| Perishable Product      | `ProductName`                           |
 | Sale                    | *skip*                                |
 | Inventory               | `StoreId`, `ProductId` (multi-select) |
 | Refrigeration Unit      | `UnitId`                              |
@@ -829,7 +829,9 @@ An **entity type key** uniquely identifies each record of an entity type. All th
 
 **Note:** Skip **Sale** and **Refrigeration Telemetry**; they aren't included in the graph in this lab.
 
-### Task 3: Materialize the graph
+### Task 3: Materialize the graph(Optional)
+
+[!IMPORTANT] Materializing the entire ontology can take more than two hours to complete. This is a temporary issue. To avoid extended processing times, materialize only the required components.
 
 1.  Select **Home**, and then select **Manage graph** on the ribbon.
 
@@ -842,8 +844,6 @@ An **entity type key** uniquely identifies each record of an entity type. All th
 ![](./media/image157.png)
 
 ![](./media/image158.png)
-
-**Important:** Materializing the **entire** ontology can take **more than one hour**. To finish the lab in time, build the graph from a smaller set of entity types, as described in the next step. A smaller graph is created in a few minutes and is enough for the exploration in this lab.
 
 3.  Set **Use the entire Ontology** to **No**. In the **Entities** list, select only **Store**, **Product**, **Shipment**, and **Supplier**, and clear all the others. Verify that only these entity types are highlighted in blue in the **Preview**, and then select **Continue**.
 
