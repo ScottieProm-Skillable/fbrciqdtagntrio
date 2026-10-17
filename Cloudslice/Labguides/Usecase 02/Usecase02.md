@@ -282,11 +282,11 @@ Here, you will enrich the Data Agent by adding natural language questions and th
 
 1. The relevant query is moderately complex, so provide an example by selecting the **Example queries** button from the **Setup** pane.
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image49.png)
+    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/lab2a7.png)
 
 1. In the Example queries tab, select the **Add example.**
 
-    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/image50.png)
+    ![](https://raw.githubusercontent.com/technofocus-pte/fbrciqdtagntsfrntr/refs/heads/main/Cloudslice/Labguide/Usecase%2002/media/lab2a8.png)
 
 1. Here, you should add Example queries for the lakehouse data source that you have created. Add the below question in the question field:
 
